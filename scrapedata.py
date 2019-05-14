@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+import html
 import requests
 import ast
 import sys
@@ -31,6 +32,7 @@ def extractFromUsername(username="DentistRhapsody", verbose=False):
   data = data.replace(":false,", ":False,")  # Temporary input purifying of exclusively edgecases I have previously caught.
   data = data.replace(":true,", ":True,")
   data = data.replace(":null,", ":None,")
+  data = html.unescape(data)
   iter = rxSplit.finditer(data)
   for match in iter:
     shows.append(match.group())
