@@ -2,7 +2,7 @@
 ## Goal
 This project extracts data from a user's MyAnimeList (MAL) profile, including a list of shows and ratings, to train a neural network into predicting new shows for the user to watch.
 
-**Current progress: Approximately 10%**
+**Current progress: Approximately 30%**
 
 ## Plan
 This project will be broken down into a few different pieces. The goal of this segmentation is to have low coupling to allow each segment to be upgraded or fully exchanged if necessary.
@@ -21,18 +21,18 @@ As of now, there are 6 planned components. This section provides a brief descrip
 - **Trainer**: Untouched
   - This component will use machine learning to evaluate watch data for a specific user to try and anticipate their preferences. It receives a username from the back-end, queries the database helper for data related to that user, and does its stuff. I am planning to use a neural network for training purposes, particularly ant-colony, because it's cool, but I should probably do research into this first.
   - No progress has been made thus far.
-- **Database Helper**: Untouched
+- **Database Helper**: Partially complete
   - As an interface between the other components and a database, this component will likely see the most traffic despite having what I expect to be the lowest computational cost.
-  - No progress yet.
-- **Database**: Untouched
+  - Using data retrieved from the datascraper, this component is now capable of taking a user's list of shows and populating the database as necessary, including destroying/reconstructing all tables and updating old data. Support for show data will be added alongisde the trainer's and datascraper's development. Additionally, this code needs some heavy maintenence: it functions, but with no care for error catching, ease of use, or documentation.
+- **Database**: Temporarily complete
   - A system containing all extracted data, functioning as something akin to a cache so as to prevent the need for excessive datascraping. There will need to be a table for shows, a table for users, and a table for users' individual watch data.
     * The shows table will need to be detailed after further research.
     * The user table will contain: username (key identifier), cache data, and training data.
-    * The watch table will consist of: username, show title, date completed, and score.
-  - MySQL is installed, and further progress will likely happen at the same time as development on the database helped component.
+    * The showlist table consist of: username (reference), show id (reference), date completed, score, and episodes finished.
+  - The 'users' and 'shows' tables are particularly barren, but their further development will coincide with the development of the training component. The 'showlist' table is effectively complete, although default values should be added across the board. The database, hosted on my Raspberry Pi B+, is accessible from any other password-bearing device on my local network.
 - **Datascraper**: Mostly complete
   - The datascraper's sole job is to acquire data from MAL's website. It can download the watch data for a given user, or it can download the data for a singular show.
-  - Largely functioning for user watch data scraping, but show data scraping is unimplemented. Currently at a 300-shows-per-user limit, due to javascript loading built into MAL.
+  - Largely functioning for user show list data scraping, but show data scraping is unimplemented. Currently at a ~300-shows-per-user limit, due to javascript loading built into MAL.
 
 ## Future plan
 Regardless of whether the full system winds up completed and functioning as described, each of the 6 components individually feature a new subject matter for me, and I'm considering each one its own project.
