@@ -3,12 +3,13 @@ import scrapedata
 import mysql.connector
 import sys
 import warnings
+import atexit
 
 defaultUsername = "DentistRhapsody"
 dbName = "mal"
+piAddress = '192.168.1.22'
 socket = None
 c = None
-warnings.filterwarnings('ignore')
 
 # Class to be called to construct a database.
 class buildDB:
@@ -22,11 +23,10 @@ class buildDB:
     self.socket = socket
     self.userShowList = userShows
     self.showDetails = shows  # This currently does not exist
-    print(cursor)
-    print(socket)
     
-  def go(self):
-    self.resetDatabase()
+  def go(self, shouldReset=False):
+    if shouldReset:
+      self.resetDatabase()
     self.createTables()
     self.populateUsers()
     self.populateShows()
@@ -51,7 +51,7 @@ class buildDB:
       
   def populateUsers(self):
     # Temp code since it's one user at a time right now
-    self.c.execute("insert ignore  into users (uid) values (%s)", (self.userShowList[0][0],))
+    self.c.execute("insert into users (uid) values (%s) on duplicate key update uid=values(uid)", (self.userShowList[0][0],))
     self.socket.commit()
     
   def populateShows(self):
@@ -63,12 +63,13 @@ class buildDB:
   def populateShowList(self):
     vals = list(zip(*self.userShowList))
     vals = list(zip(vals[0], vals[1], vals[2], vals[3], vals[4]))
-    self.c.executemany("insert into showlist (uid, sid, score, eps, date) values (%s, %s, %s, %s, %s) on duplicate key update score=values(score), eps=values(score), date=values(date)", vals)
+    self.c.executemany("insert into showlist (uid, sid, score, eps, date) values (%s, %s, %s, %s, %s) on duplicate key update score=values(score), eps=values(eps), date=values(date)", vals)
     self.socket.commit()
   
 # --------------------------------------------
+# Functions designed for my sanity within this class
 
-def showListReader(show):
+def _showListReader(show):
   def getSID(userShow):
     # rx = re.compile(r"\/([0-9]+)\\")
     # return rx.search(show['anime_url']).group()
@@ -93,11 +94,11 @@ def showListReader(show):
     
   return (getSID(show), getScore(show), getEpisodes(show), getDate(show), getName(show))
 
-def connect():
+def _connect():
   try:
-    socket = mysql.connector.connect(user='pythonscript', password='pythonDeshita', host='192.168.1.22', database=dbName)
+    socket = mysql.connector.connect(user='pythonscript', password='pythonDeshita', host=piAddress, database=dbName)
   except mysql.connector.Error as err:
-    print("Connection issue! " + err)
+    print("Connection issue! " + str(err))
     return (None, None)
   else:
     c = socket.cursor()
@@ -108,26 +109,95 @@ def connect():
       return (socket, None)
   return (socket, c)
       
-def singleton():
+def _singleton():
+  print("-- Singleton databasehelper test beginning. --")
+  print("Connecting... ", end='')
   (s, co) = connect()
   socket = s
   c = co
   if (socket == None or c == None):
-    print("Exiting...")
+    print("Connection failed, exiting")
     sys.exit()
+  print("success.\nAcquiring user data for {}... ".format(defaultUsername), end='')
   showListData = scrapedata.efu()
   sld = []
   for s in showListData:
     sld.append((("", defaultUsername) + showListReader(s))[1:])
-  print("List of shows acquired, preparing to create database...")
+  print("complete.\nNow initiating database management class... ".format(len(sld)), end='')
   db = buildDB(c, socket, userShows=sld)
-  print("Database creation finished. Beginning full process...")
+  print("success.\nNow beginning population of database with 1 user and {} shows.")
   db.go()
-  print("Full process finished.")
-  c.close()
-  socket.close()
+  print("-- Full process finished. --")
+
+def _constructDataForUser(username, c):
+  showListData = scrapedata.efu(username)
+  sld = []
+  for s in showListData:
+    sld.append((("", username) + showListReader(s))[1:])
+  db = buildDB(c, socket, userShows=sld)
+  db.go()
+  
+def _close():
+  if (c != None):
+    c.close()
+  if (socket != None):
+    socket.close()
+  print("c and socket have been closed.")
 
 # --------------------------------------------
+# Functions meant to be used by other classes
+
+class databaseAssistant:
+
+  def __init__(self):
+    self.socket = None
+    self.cursor = None
+
+  def getUserData(self, username=defaultUsername):
+    # Retrieves user data.
+    if (self.socket == None or self.cursor == None):
+      (self.socket, self.cursor) = _connect()
+    if (self.socket == None or self.cursor == None):
+      print("Connection failed in getShowData.")
+      sys.exit()
+    self.cursor.execute("select * from users where uid='{}' limit 1;".format(username))
+    return self.cursor.fetchone()
+
+  def getUserShowData(self, username=defaultUsername, fancy=False):
+    # Retrieves show data for a specific user.
+    if (self.socket == None or self.cursor == None):
+      (self.socket, self.cursor) = _connect()
+    if (self.socket == None or self.cursor == None):
+      print("Connection failed in getShowData.")
+      sys.exit()
+    self.cursor.execute("select * from users where uid='{}' limit 1;".format(username))
+    userExists = self.cursor.fetchone() != None
+    if (userExists == False):
+      _constructDataForUser(username, self.cursor)
+    if (fancy):
+      self.cursor.execute("select s.name,u.score,u.date,u.eps from ((select sid,score,date,eps from showlist where uid='{}') as u inner join shows as s on u.sid=s.sid)".format(username))
+    else:
+      self.cursor.execute("select sid,score,date,eps from showlist where uid='{}';".format(username))
+    return self.cursor.fetchall()
+
+  def getShowData(self, showid):
+    # Retrieves data for a specific show or list of shows.
+    if (isinstance(showid, int)):
+      showid = [showid]
+    showid = ",".join(str(x) for x in showid)
+    print(showid)
+    if (self.socket == None or self.cursor == None):
+      (self.socket, self.cursor) = _connect()
+    if (self.socket == None or self.cursor == None):
+      print("Connection failed in getShowData.")
+      sys.exit()
+    self.cursor.execute("select * from shows where sid in ({})".format(str(showid)))
+    return self.cursor.fetchall()
+
+# --------------------------------------------
+
+warnings.filterwarnings('ignore')
+atexit.register(_close)
 
 if __name__ == "__main__":
   singleton()
